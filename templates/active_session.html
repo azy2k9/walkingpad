@@ -1,63 +1,99 @@
-{% extends "base.html" %}
-{% block content %}
+{% extends "base.html" %} {% block content %}
 <div class="text-center">
-    <h1 class="content-title mb-4">Active Session</h1>
+  <h1 class="content-title mb-4">Active Session</h1>
 
-    <div class="row g-4 mb-5">
-      <div class="col-lg col-md-4 col-6">
-          <div class="stat-card">
-              <p class="stat-label">Time</p>
-              <p class="stat-value" id="time_active">{{ time_active }}</p>
-          </div>
+  <div class="row g-4 mb-5 stat-row">
+    <div class="col-lg col-md-4 col-6">
+      <div class="stat-card">
+        <p class="stat-label">Time</p>
+        <p class="stat-value" id="time_active">{{ time_active }}</p>
       </div>
-      <div class="col-lg col-md-4 col-6"> <div class="stat-card">
-              <p class="stat-label">Speed</p>
-              <p class="stat-value" id="speed">{{ "%.1f"|format(speed) }} mph</p>
-          </div>
+    </div>
+    <div class="col-lg col-md-4 col-6">
+      <div class="stat-card">
+        <p class="stat-label">Speed</p>
+        <p class="stat-value" id="speed">
+          {{ "%.1f"|format(speed_mph) }} mph ·<br />
+          {{ "%.1f"|format(speed_kmh) }} km/h
+        </p>
       </div>
-      <div class="col-lg col-md-4 col-6">
-          <div class="stat-card">
-              <p class="stat-label">Distance</p>
-              <p class="stat-value" id="distance">{{ "%.2f"|format(distance) }} mi</p>
-          </div>
+    </div>
+    <div class="col-lg col-md-4 col-6">
+      <div class="stat-card">
+        <p class="stat-label">Distance</p>
+        <p class="stat-value" id="distance">
+          {{ "%.2f"|format(distance_mi) }} mi ·<br />
+          {{ "%.2f"|format(distance_km) }} km
+        </p>
       </div>
-      <div class="col-lg col-md-4 col-6">
-          <div class="stat-card">
-              <p class="stat-label">Steps</p>
-              <p class="stat-value" id="steps">{{ steps|int }}</p>
-          </div>
+    </div>
+    <div class="col-lg col-md-4 col-6">
+      <div class="stat-card">
+        <p class="stat-label">Steps</p>
+        <p class="stat-value" id="steps">{{ steps|int }}</p>
       </div>
-      <div class="col-lg col-md-4 col-6">
-          <div class="stat-card">
-              <p class="stat-label">Calories</p>
-              <p class="stat-value" id="calories">{{ "%.0f"|format(calories) }}</p>
-          </div>
+    </div>
+    <div class="col-lg col-md-4 col-6">
+      <div class="stat-card">
+        <p class="stat-label">Calories</p>
+        <p class="stat-value" id="calories">{{ "%.0f"|format(calories) }}</p>
       </div>
+    </div>
   </div>
 
-    <div class="d-flex justify-content-center gap-2">
-        <a href="{{ url_for('slow_speed') }}" class="btn btn-custom-primary d-flex align-items-center gap-2">
-            <i class="bi bi-person-walking"></i> Slow
-        </a>
-        <a href="{{ url_for('decrease_speed') }}" class="btn btn-custom-primary d-flex align-items-center gap-2">
-            <i class="bi bi-dash-lg"></i> Decrease
-        </a>
-        <a href="{{ url_for('pause_session') }}" class="btn btn-custom-primary d-flex align-items-center gap-2">
-            <i class="bi bi-pause-fill"></i> Pause
-        </a>
-        <a href="{{ url_for('increase_speed') }}" class="btn btn-custom-primary d-flex align-items-center gap-2">
-            <i class="bi bi-plus-lg"></i> Increase
-        </a>
-        <a href="{{ url_for('max_speed') }}" class="btn btn-custom-primary d-flex align-items-center gap-2">
-            <i class="bi bi-speedometer"></i> Max </a>
-    </div>
+  <div class="d-flex justify-content-center gap-2">
+    <a
+      href="{{ url_for('slow_speed') }}"
+      class="btn btn-custom-primary d-flex align-items-center gap-2"
+    >
+      <i class="bi bi-person-walking"></i> Slow
+    </a>
+    <a
+      href="{{ url_for('decrease_speed_double') }}"
+      class="btn btn-custom-primary d-flex align-items-center gap-2"
+    >
+      <i class="bi bi-dash-lg"></i>
+      <i class="bi bi-dash-lg"></i>
+    </a>
+    <a
+      href="{{ url_for('decrease_speed') }}"
+      class="btn btn-custom-primary d-flex align-items-center gap-2"
+    >
+      <i class="bi bi-dash-lg"></i>
+    </a>
+    <a
+      href="{{ url_for('pause_session') }}"
+      class="btn btn-custom-primary d-flex align-items-center gap-2"
+    >
+      <i class="bi bi-pause-fill"></i> Pause
+    </a>
+    <a
+      href="{{ url_for('increase_speed') }}"
+      class="btn btn-custom-primary d-flex align-items-center gap-2"
+    >
+      <i class="bi bi-plus-lg"></i>
+    </a>
+    <a
+      href="{{ url_for('increase_speed_double') }}"
+      class="btn btn-custom-primary d-flex align-items-center gap-2"
+    >
+      <i class="bi bi-plus-lg"></i>
+      <i class="bi bi-plus-lg"></i>
+    </a>
+    <a
+      href="{{ url_for('max_speed') }}"
+      class="btn btn-custom-primary d-flex align-items-center gap-2"
+    >
+      <i class="bi bi-speedometer"></i> Max
+    </a>
+  </div>
 </div>
 
 <script>
-  setInterval(function(){
+  setInterval(function () {
     fetch("{{ url_for('get_stats') }}")
-      .then(response => response.json())
-      .then(data => {
+      .then((response) => response.json())
+      .then((data) => {
         // --- NEW: Highest priority check for connection status ---
         if (data.is_connected === false) {
           window.location.reload();
@@ -70,10 +106,19 @@
         } else {
           // Update the stats on the current page
           document.getElementById("time_active").innerText = data.time_active;
-          document.getElementById("speed").innerText = data.speed.toFixed(1) + ' mph';
-          document.getElementById("distance").innerText = data.distance.toFixed(2) + ' mi';
+          document.getElementById("speed").innerText =
+            data.speed_mph.toFixed(1) +
+            " mph · " +
+            data.speed_kmh.toFixed(1) +
+            " km/h";
+          document.getElementById("distance").innerText =
+            data.distance_mi.toFixed(2) +
+            " mi · " +
+            data.distance_km.toFixed(2) +
+            " km";
           document.getElementById("steps").innerText = parseInt(data.steps, 10);
-          document.getElementById("calories").innerText = data.calories.toFixed(0);
+          document.getElementById("calories").innerText =
+            data.calories.toFixed(0);
         }
       });
   }, 1500);

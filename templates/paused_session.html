@@ -3,7 +3,7 @@
 <div class="text-center">
     <h1 class="content-title mb-4">Session Paused</h1>
 
-    <div class="row g-4 mb-5">
+    <div class="row g-4 mb-5 stat-row">
         <div class="col-lg col-md-4 col-6">
             <div class="stat-card">
                 <p class="stat-label">Time</p>
@@ -13,13 +13,13 @@
         <div class="col-lg col-md-4 col-6">
             <div class="stat-card">
                 <p class="stat-label">Speed</p>
-                <p class="stat-value" id="speed">0.0 mph</p>
+                <p class="stat-value" id="speed">{{ "%.1f"|format(speed_mph) }} mph · {{ "%.1f"|format(speed_kmh) }} km/h</p>
             </div>
         </div>
         <div class="col-lg col-md-4 col-6">
             <div class="stat-card">
                 <p class="stat-label">Distance</p>
-                <p class="stat-value" id="distance">{{ "%.2f"|format(distance) }} mi</p>
+                <p class="stat-value" id="distance">{{ "%.2f"|format(distance_mi) }} mi · {{ "%.2f"|format(distance_km) }} km</p>
             </div>
         </div>
         <div class="col-lg col-md-4 col-6">

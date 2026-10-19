@@ -27,10 +27,8 @@ KCAL_PER_MILE = 95  # rough kcal per mile
 # Speed control constants
 MAX_SPEED_KMH = 6.0  # Approx 3.7 mph, a common max for these pads
 MIN_SPEED_KMH = 1.0
-SPEED_STEP = 0.6  # Speed change per button press in km/h
+SPEED_STEP = 0.3  # Speed change per button press in km/h
 SLOW_WALK_SPEED_KMH = 4.5 # Approx 2.8 MPH
-
-
 
 def kcal_estimate(miles: float) -> float:
     return KCAL_PER_MILE * miles
@@ -68,43 +66,43 @@ _last_dev_dist = _last_dev_steps = 0
 # ── Context processor so templates always know flags ────────────────────
 @app.context_processor
 def inject_flags():
-    return dict(connected=connected, connecting=connecting, connection_failed=connection_failed)
+    return dict(
+        connected=connected,
+        connecting=connecting,
+        connection_failed=connection_failed,
+        pad_address=_pad_address,
+    )
 
 
 # ── BLE helpers ─────────────────────────────────────────────────────────
 async def _connect_to_pad() -> bool:
     global controller, _pad_address
-    dev = None
 
-    if _pad_address:
-        logging.info(f"Attempting to connect to known address: {_pad_address}")
-        try:
-            dev = await BleakScanner.find_device_by_address(_pad_address, timeout=5)
-        except Exception as exc:
-            logging.warning(f"Failed to find device by address: {exc}")
-            dev = None
-
-    if not dev:
-        logging.info("Scanning for device by name 'WalkingPad'...")
-        try:
-            dev = await BleakScanner.find_device_by_name("WalkingPad", timeout=10)
-        except Exception as exc:
-            logging.warning(f"Failed to find device by name: {exc}")
-            dev = None
-
-    if not dev:
-        logging.error("Could not find WalkingPad. Ensure it is on and in range.")
-        _pad_address = None
+    if not _pad_address:
+        logging.error("No treadmill selected. Pick a device from the list in the web UI.")
         return False
 
-    _pad_address = dev.address
-    logging.info(f"Device found! Address: {_pad_address}")
+    logging.info("Attempting to connect to selected address: %s", _pad_address)
+    try:
+        dev = await BleakScanner.find_device_by_address(_pad_address, timeout=10)
+    except Exception as exc:
+        logging.warning("Failed to find device by address: %s", exc)
+        dev = None
+
+    if not dev:
+        logging.error(
+            "Could not find device at %s. Ensure it is on, in range, and scan again.",
+            _pad_address,
+        )
+        return False
+
+    logging.info("Device found at %s", _pad_address)
 
     controller = Controller()
     await controller.run(dev.address)
 
     if hasattr(controller, "client") and controller.client:
-        controller.client.set_disconnected_callback(_handle_disconnect)
+        _register_disconnect_callback(controller.client)
 
     await controller.switch_mode(WalkingPad.MODE_MANUAL)
 
@@ -226,6 +224,9 @@ def _start_ble_thread():
     global connecting, connection_failed
     if connected or connecting:
         return
+    if not _pad_address:
+        logging.warning("Cannot start BLE thread without a selected device address.")
+        return
     connecting = True
     connection_failed = False
     threading.Thread(target=_ble_thread, daemon=True).start()
@@ -239,6 +240,83 @@ def _handle_disconnect(client):
     belt_running = False
     connecting = False
     connection_failed = True
+
+
+def _register_disconnect_callback(bleak_client) -> None:
+    """Register disconnect handler (bleak 3.x moved this off BleakClient)."""
+    if bleak_client is None:
+        return
+
+    if hasattr(bleak_client, "set_disconnected_callback"):
+        bleak_client.set_disconnected_callback(_handle_disconnect)
+        return
+
+    backend = getattr(bleak_client, "_backend", None)
+    if backend is not None and hasattr(backend, "set_disconnected_callback"):
+        backend.set_disconnected_callback(lambda: _handle_disconnect(bleak_client))
+        return
+
+    logging.warning("Unable to register BLE disconnect callback for this bleak version.")
+
+
+_ble_scan_lock = threading.Lock()
+
+
+async def _discover_nearby_devices(timeout: float = 10.0) -> list[dict]:
+    """Scan for BLE devices and return name, address, and RSSI when available."""
+    logging.info("Scanning for nearby Bluetooth devices (%.0fs)...", timeout)
+    devices_out: list[dict] = []
+
+    try:
+        discovered = await BleakScanner.discover(timeout=timeout, return_adv=True)
+    except TypeError:
+        discovered = await BleakScanner.discover(timeout=timeout)
+
+    if isinstance(discovered, dict):
+        for address, entry in discovered.items():
+            if isinstance(entry, tuple) and len(entry) == 2:
+                device, adv_data = entry
+                name = device.name or getattr(adv_data, "local_name", None)
+                rssi = getattr(adv_data, "rssi", None)
+            else:
+                device = entry
+                name = getattr(device, "name", None)
+                rssi = None
+            devices_out.append(
+                {"name": name, "address": address, "rssi": rssi}
+            )
+    else:
+        for device in discovered:
+            devices_out.append(
+                {
+                    "name": device.name,
+                    "address": device.address,
+                    "rssi": None,
+                }
+            )
+
+    devices_out.sort(
+        key=lambda d: (-(d["rssi"] if d["rssi"] is not None else -999), d["address"])
+    )
+
+    for d in devices_out:
+        logging.info(
+            "BLE nearby: name=%r address=%s rssi=%s",
+            d["name"],
+            d["address"],
+            d["rssi"],
+        )
+    logging.info("BLE scan finished: %d device(s) found", len(devices_out))
+    return devices_out
+
+
+def _run_ble_device_scan(timeout: float = 10.0) -> list[dict]:
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(_discover_nearby_devices(timeout))
+    finally:
+        loop.close()
+
 
 # ── Flask routes ────────────────────────────────────────────────────────
 @app.route("/")
@@ -258,20 +336,69 @@ def root():
 
     return render_template(
         template,
-        speed=current_speed_kmh * KMH_TO_MPH,
-        distance=current_distance_km * KM_TO_MI,
+        speed_mph=current_speed_kmh * KMH_TO_MPH,
+        speed_kmh=current_speed_kmh,
+        distance_mi=current_distance_km * KM_TO_MI,
+        distance_km=current_distance_km,
         steps=current_steps,
         calories=current_calories,
-        time_active=time_active_display 
+        time_active=time_active_display,
     )
 
 
 @app.route("/reconnect", endpoint="reconnect")
 @app.route("/manual_reconnect", endpoint="manual_reconnect")
 def reconnect():
-    if not connected and not connecting:
+    if not connected and not connecting and _pad_address:
         _start_ble_thread()
     return redirect(url_for("root"))
+
+
+@app.route("/connect", methods=["POST"], endpoint="connect_device")
+def connect_device():
+    global _pad_address, connection_failed
+
+    if connected or connecting:
+        return redirect(url_for("root"))
+
+    address = (request.form.get("address") or "").strip()
+    if not address:
+        connection_failed = True
+        return redirect(url_for("root"))
+
+    _pad_address = address
+    connection_failed = False
+    _start_ble_thread()
+    return redirect(url_for("root"))
+
+
+@app.route("/api/ble_scan")
+def ble_scan():
+    """Discover nearby BLE devices for the device picker UI."""
+    if connected or connecting:
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": "Cannot scan while connecting or already connected to a device.",
+                    "devices": [],
+                }
+            ),
+            409,
+        )
+
+    if not _ble_scan_lock.acquire(blocking=False):
+        return jsonify({"ok": False, "scanning": True, "devices": []})
+
+    try:
+        timeout = min(30.0, max(3.0, float(request.args.get("timeout", 10))))
+        devices = _run_ble_device_scan(timeout)
+        return jsonify({"ok": True, "scanning": False, "devices": devices})
+    except Exception as exc:
+        logging.exception("BLE scan failed")
+        return jsonify({"ok": False, "error": str(exc), "devices": []}), 500
+    finally:
+        _ble_scan_lock.release()
 
 
 @app.route("/start")
@@ -371,6 +498,14 @@ def resume_session():
 
 
 # ── Speed Controls ───────────────────────────────────────────────────────
+def _apply_speed_change(new_speed_kmh: float) -> None:
+    if not connected or controller is None or ble_loop is None:
+        logging.warning("Speed change ignored: not connected to treadmill.")
+        return
+    dev_speed = int(round(new_speed_kmh * 10))
+    asyncio.run_coroutine_threadsafe(controller.change_speed(dev_speed), ble_loop)
+
+
 @app.route("/decrease_speed")
 def decrease_speed():
     """Decrease the belt speed by one step."""
@@ -378,8 +513,17 @@ def decrease_speed():
         return redirect(url_for("root"))
 
     new_speed_kmh = max(MIN_SPEED_KMH, current_speed_kmh - SPEED_STEP)
-    dev_speed = int(new_speed_kmh * 10)
-    asyncio.run_coroutine_threadsafe(controller.change_speed(dev_speed), ble_loop)
+    _apply_speed_change(new_speed_kmh)
+    return redirect(url_for("root"))
+
+@app.route("/decrease_speed_double")
+def decrease_speed_double():
+    """Decrease the belt speed by one step."""
+    if not belt_running:
+        return redirect(url_for("root"))
+
+    new_speed_kmh = max(MIN_SPEED_KMH, current_speed_kmh - (SPEED_STEP * 2))
+    _apply_speed_change(new_speed_kmh)
     return redirect(url_for("root"))
 
 @app.route("/slow_speed")
@@ -388,8 +532,7 @@ def slow_speed():
     if not belt_running:
         return redirect(url_for("root"))
     
-    dev_speed = int(SLOW_WALK_SPEED_KMH * 10)
-    asyncio.run_coroutine_threadsafe(controller.change_speed(dev_speed), ble_loop)
+    _apply_speed_change(SLOW_WALK_SPEED_KMH)
     return redirect(url_for("root"))
 
 @app.route("/increase_speed")
@@ -399,8 +542,17 @@ def increase_speed():
         return redirect(url_for("root"))
 
     new_speed_kmh = min(MAX_SPEED_KMH, current_speed_kmh + SPEED_STEP)
-    dev_speed = int(new_speed_kmh * 10)
-    asyncio.run_coroutine_threadsafe(controller.change_speed(dev_speed), ble_loop)
+    _apply_speed_change(new_speed_kmh)
+    return redirect(url_for("root"))
+
+@app.route("/increase_speed_double")
+def increase_speed_double():
+    """Increase the belt speed by one step."""
+    if not belt_running:
+        return redirect(url_for("root"))
+
+    new_speed_kmh = min(MAX_SPEED_KMH, current_speed_kmh + (SPEED_STEP * 2))
+    _apply_speed_change(new_speed_kmh)
     return redirect(url_for("root"))
 
 
@@ -410,8 +562,7 @@ def max_speed():
     if not belt_running:
         return redirect(url_for("root"))
     
-    dev_speed = int(MAX_SPEED_KMH * 10)
-    asyncio.run_coroutine_threadsafe(controller.change_speed(dev_speed), ble_loop)
+    _apply_speed_change(MAX_SPEED_KMH)
     return redirect(url_for("root"))
 
 
@@ -421,11 +572,17 @@ def stats_json():
     # Calculate formatted_time_active within the function scope
     formatted_time_active = format_seconds_to_hms(current_session_active_seconds)
 
+    speed_kmh = round(current_speed_kmh, 1)
+    speed_mph = round(current_speed_kmh * KMH_TO_MPH, 1)
     data = dict(
         is_connected=connected,      
         is_running=belt_running,     
-        speed=round(current_speed_kmh * KMH_TO_MPH, 1),
+        speed=speed_mph,
+        speed_mph=speed_mph,
+        speed_kmh=speed_kmh,
         distance=round(current_distance_km * KM_TO_MI, 2),
+        distance_mi=round(current_distance_km * KM_TO_MI, 2),
+        distance_km=round(current_distance_km, 2),
         steps=current_steps,
         calories=round(current_calories),
         time_active=formatted_time_active 
@@ -444,6 +601,4 @@ def shutdown():
     os._exit(0)
 
 
-# ── Kick off BLE thread ──────────────────────────────────────────────────
-# The server is no longer started here. This just pre-starts the BLE thread.
-_start_ble_thread()
+# BLE connection starts when the user picks a device from the web UI (/connect).

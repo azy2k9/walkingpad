@@ -74,20 +74,33 @@
             font-weight: 700;
         }
 
+        .stat-row > [class*="col"] {
+            display: flex;
+        }
+
         .stat-card {
             background-color: var(--card-color);
             padding: 1.5rem;
             border-radius: 0.5rem;
+            width: 100%;
+            min-height: 7.25rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
         }
 
         .stat-card .stat-label {
             font-size: 1rem;
             font-weight: 500;
+            margin-bottom: 0.35rem;
         }
 
         .stat-card .stat-value {
-            font-size: 1.75rem;
+            font-size: 1.35rem;
             font-weight: 700;
+            line-height: 1.35;
+            margin-bottom: 0;
         }
 
         /* Custom button styles */
@@ -155,5 +168,6 @@
       }
     });
     </script>
+    {% block scripts %}{% endblock %}
 </body>
 </html>

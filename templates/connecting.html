@@ -1,19 +1,131 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="text-center py-5">
+<div class="py-4">
     {% if connecting %}
-        <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;">
-            <span class="visually-hidden">Loading...</span>
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <h2 class="content-title">Connecting...</h2>
+            <p class="text-muted">Trying to reach your treadmill{% if pad_address %} at <code>{{ pad_address }}</code>{% endif %}.</p>
         </div>
-        <h2 class="content-title">Connecting...</h2>
-        <p class="text-muted">Please ensure your WalkingPad is turned on.</p>
-    {% elif connection_failed %}
-        <h2 class="content-title text-danger">Connection Failed</h2>
-        <p class="text-muted mb-4">Could not find the WalkingPad. Please ensure it's on and in range.</p>
-        <a href="{{ url_for('manual_reconnect') }}" class="btn btn-custom-primary">Try Again</a>
     {% else %}
-        <h2 class="content-title text-danger">Disconnected</h2>
-         <a href="{{ url_for('manual_reconnect') }}" class="btn btn-custom-primary">Connect</a>
+        <div class="text-center mb-4">
+            {% if connection_failed %}
+                <h2 class="content-title text-danger">Connection Failed</h2>
+                <p class="text-muted">Could not connect to the selected device. Scan again and pick your treadmill from the list.</p>
+            {% else %}
+                <h2 class="content-title">Connect your treadmill</h2>
+                <p class="text-muted">Scan for nearby Bluetooth devices, then choose yours and press Connect.</p>
+            {% endif %}
+        </div>
+
+        <div class="d-flex flex-wrap gap-2 justify-content-center mb-3">
+            <button type="button" id="ble-scan-button" class="btn btn-outline-secondary">Scan nearby devices</button>
+            {% if connection_failed and pad_address %}
+                <form method="post" action="{{ url_for('connect_device') }}" class="d-inline">
+                    <input type="hidden" name="address" value="{{ pad_address }}">
+                    <button type="submit" class="btn btn-custom-primary">Retry last device</button>
+                </form>
+            {% endif %}
+        </div>
+
+        <p id="ble-scan-status" class="text-muted small text-center mb-3" aria-live="polite"></p>
+
+        <div id="ble-device-list" class="list-group mx-auto" style="max-width: 640px;"></div>
+        <p id="ble-device-empty" class="text-muted text-center small mt-3 d-none">No devices found yet. Turn on the treadmill and scan again.</p>
     {% endif %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+{% if not connecting %}
+<script>
+(function () {
+  const statusEl = document.getElementById('ble-scan-status');
+  const scanButton = document.getElementById('ble-scan-button');
+  const listEl = document.getElementById('ble-device-list');
+  const emptyEl = document.getElementById('ble-device-empty');
+  const connectUrl = '{{ url_for("connect_device") }}';
+  const lastAddress = {{ pad_address|tojson }};
+
+  function displayName(device) {
+    return device.name && String(device.name).trim() ? device.name : 'Unknown name';
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  function renderDevices(devices) {
+    if (!listEl) return;
+    listEl.innerHTML = '';
+
+    if (!devices.length) {
+      if (emptyEl) emptyEl.classList.remove('d-none');
+      return;
+    }
+    if (emptyEl) emptyEl.classList.add('d-none');
+
+    devices.forEach(function (device) {
+      const name = displayName(device);
+      const address = device.address || '';
+      const rssiText = device.rssi != null ? device.rssi + ' dBm' : 'signal unknown';
+      const isLast = lastAddress && address === lastAddress;
+
+      const item = document.createElement('div');
+      item.className = 'list-group-item d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3';
+      item.innerHTML =
+        '<div class="text-start">' +
+          '<div class="fw-semibold">' + escapeHtml(name) + (isLast ? ' <span class="badge text-bg-secondary">last tried</span>' : '') + '</div>' +
+          '<div class="small text-muted font-monospace">' + escapeHtml(address) + ' · ' + escapeHtml(rssiText) + '</div>' +
+        '</div>' +
+        '<form method="post" action="' + connectUrl + '" class="flex-shrink-0">' +
+          '<input type="hidden" name="address" value="' + escapeHtml(address) + '">' +
+          '<button type="submit" class="btn btn-custom-primary btn-sm px-4">Connect</button>' +
+        '</form>';
+      listEl.appendChild(item);
+    });
+  }
+
+  async function runBleScan() {
+    if (!scanButton) return;
+    scanButton.disabled = true;
+    if (statusEl) statusEl.textContent = 'Scanning for nearby Bluetooth devices (about 5 seconds)...';
+    if (listEl) listEl.innerHTML = '';
+    if (emptyEl) emptyEl.classList.add('d-none');
+
+    try {
+      const response = await fetch('{{ url_for("ble_scan") }}?timeout=5', { cache: 'no-store' });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        if (statusEl) statusEl.textContent = payload.error || 'Scan could not run.';
+        return;
+      }
+
+      const devices = payload.devices || [];
+      renderDevices(devices);
+
+      if (statusEl) {
+        statusEl.textContent = devices.length
+          ? 'Found ' + devices.length + ' device(s). Select your treadmill and press Connect.'
+          : 'Scan complete — no devices found. Check Bluetooth and try again.';
+      }
+    } catch (err) {
+      if (statusEl) statusEl.textContent = 'Scan failed. Try again in a moment.';
+    } finally {
+      if (scanButton) scanButton.disabled = false;
+    }
+  }
+
+  if (scanButton) {
+    scanButton.addEventListener('click', runBleScan);
+  }
+  runBleScan();
+})();
+</script>
+{% endif %}
 {% endblock %}
