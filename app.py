@@ -30,6 +30,10 @@ MIN_SPEED_KMH = 1.0
 SPEED_STEP = 0.3  # Speed change per button press in km/h
 SLOW_WALK_SPEED_KMH = 4.5 # Approx 2.8 MPH
 
+SAVED_TREADMILL_COOKIE = "walkingpad_device_name"
+SAVED_TREADMILL_COOKIE_MAX_AGE = 365 * 24 * 60 * 60
+
+
 def kcal_estimate(miles: float) -> float:
     return KCAL_PER_MILE * miles
 
@@ -49,6 +53,7 @@ connected = connecting = connection_failed = False
 ble_loop: asyncio.AbstractEventLoop | None = None
 controller: Controller | None = None
 _pad_address: str | None = None
+_pad_name: str | None = None
 _auto_pause_grace_until = 0
 speed_history = deque(maxlen=15)
 
@@ -61,6 +66,7 @@ current_calories = 0.0
 current_session_active_seconds = 0 
 
 _last_dev_dist = _last_dev_steps = 0
+_connect_failed_clear_saved = False
 
 
 # ── Context processor so templates always know flags ────────────────────
@@ -71,32 +77,59 @@ def inject_flags():
         connecting=connecting,
         connection_failed=connection_failed,
         pad_address=_pad_address,
+        pad_name=_pad_name,
     )
+
+
+def _set_saved_treadmill_cookie(response, name: str | None):
+    if name:
+        response.set_cookie(
+            SAVED_TREADMILL_COOKIE,
+            name,
+            max_age=SAVED_TREADMILL_COOKIE_MAX_AGE,
+            samesite="Lax",
+            httponly=False,
+        )
+    return response
 
 
 # ── BLE helpers ─────────────────────────────────────────────────────────
 async def _connect_to_pad() -> bool:
-    global controller, _pad_address
+    global controller, _pad_address, _pad_name
 
-    if not _pad_address:
+    if not _pad_address and not _pad_name:
         logging.error("No treadmill selected. Pick a device from the list in the web UI.")
         return False
 
-    logging.info("Attempting to connect to selected address: %s", _pad_address)
-    try:
-        dev = await BleakScanner.find_device_by_address(_pad_address, timeout=10)
-    except Exception as exc:
-        logging.warning("Failed to find device by address: %s", exc)
-        dev = None
+    dev = None
+    if _pad_address:
+        logging.info("Attempting to connect to selected address: %s", _pad_address)
+        try:
+            dev = await BleakScanner.find_device_by_address(_pad_address, timeout=10)
+        except Exception as exc:
+            logging.warning("Failed to find device by address: %s", exc)
+            dev = None
+
+    if not dev and _pad_name:
+        logging.info("Attempting to connect to saved treadmill name: %s", _pad_name)
+        try:
+            dev = await BleakScanner.find_device_by_name(_pad_name, timeout=10)
+        except Exception as exc:
+            logging.warning("Failed to find device by name: %s", exc)
+            dev = None
 
     if not dev:
         logging.error(
-            "Could not find device at %s. Ensure it is on, in range, and scan again.",
+            "Could not find treadmill (address=%s, name=%s). Ensure it is on, in range, and scan again.",
             _pad_address,
+            _pad_name,
         )
         return False
 
-    logging.info("Device found at %s", _pad_address)
+    _pad_address = dev.address
+    if dev.name:
+        _pad_name = dev.name
+    logging.info("Device found: name=%r address=%s", _pad_name, _pad_address)
 
     controller = Controller()
     await controller.run(dev.address)
@@ -201,7 +234,7 @@ async def _stats_monitor():
 
 
 def _ble_thread():
-    global connected, connecting, connection_failed, ble_loop
+    global connected, connecting, connection_failed, ble_loop, _connect_failed_clear_saved
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     ble_loop = loop
@@ -209,6 +242,7 @@ def _ble_thread():
     if not loop.run_until_complete(_connect_to_pad()):
         connecting = False
         connection_failed = True
+        _connect_failed_clear_saved = True
         return
 
     connected = True
@@ -224,8 +258,8 @@ def _start_ble_thread():
     global connecting, connection_failed
     if connected or connecting:
         return
-    if not _pad_address:
-        logging.warning("Cannot start BLE thread without a selected device address.")
+    if not _pad_address and not _pad_name:
+        logging.warning("Cannot start BLE thread without a device address or saved name.")
         return
     connecting = True
     connection_failed = False
@@ -321,8 +355,28 @@ def _run_ble_device_scan(timeout: float = 10.0) -> list[dict]:
 # ── Flask routes ────────────────────────────────────────────────────────
 @app.route("/")
 def root():
+    global connection_failed, _pad_name, _connect_failed_clear_saved
+
     if not connected:
-        return render_template("connecting.html") #
+        show_saved_connect_error = _connect_failed_clear_saved
+        saved_name = (request.cookies.get(SAVED_TREADMILL_COOKIE) or "").strip()
+
+        if saved_name and not connecting and not connection_failed:
+            _pad_name = saved_name
+            _start_ble_thread()
+
+        resp = make_response(
+            render_template(
+                "connecting.html",
+                show_saved_connect_error=show_saved_connect_error,
+            )
+        )
+        if _connect_failed_clear_saved:
+            resp.delete_cookie(SAVED_TREADMILL_COOKIE)
+            _connect_failed_clear_saved = False
+            connection_failed = False
+            _pad_name = None
+        return resp
 
     time_active_display = "0:00:00" # Default for start/paused if not running
     if session_active: # Only calculate if a session is or was active
@@ -349,27 +403,32 @@ def root():
 @app.route("/reconnect", endpoint="reconnect")
 @app.route("/manual_reconnect", endpoint="manual_reconnect")
 def reconnect():
-    if not connected and not connecting and _pad_address:
+    if not connected and not connecting and (_pad_address or _pad_name):
         _start_ble_thread()
     return redirect(url_for("root"))
 
 
 @app.route("/connect", methods=["POST"], endpoint="connect_device")
 def connect_device():
-    global _pad_address, connection_failed
+    global _pad_address, _pad_name, connection_failed
 
     if connected or connecting:
         return redirect(url_for("root"))
 
     address = (request.form.get("address") or "").strip()
-    if not address:
+    name = (request.form.get("name") or "").strip()
+    if not address and not name:
         connection_failed = True
         return redirect(url_for("root"))
 
-    _pad_address = address
+    _pad_address = address or None
+    _pad_name = name or None
     connection_failed = False
     _start_ble_thread()
-    return redirect(url_for("root"))
+    resp = redirect(url_for("root"))
+    if name:
+        _set_saved_treadmill_cookie(resp, name)
+    return resp
 
 
 @app.route("/api/ble_scan")

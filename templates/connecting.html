@@ -7,13 +7,17 @@
                 <span class="visually-hidden">Loading...</span>
             </div>
             <h2 class="content-title">Connecting...</h2>
-            <p class="text-muted">Trying to reach your treadmill{% if pad_address %} at <code>{{ pad_address }}</code>{% endif %}.</p>
+            <p class="text-muted">
+                Trying to reach your treadmill
+                {% if pad_name %}<strong>{{ pad_name }}</strong>{% endif %}
+                {% if pad_address %} at <code>{{ pad_address }}</code>{% endif %}.
+            </p>
         </div>
     {% else %}
         <div class="text-center mb-4">
-            {% if connection_failed %}
+            {% if show_saved_connect_error %}
                 <h2 class="content-title text-danger">Connection Failed</h2>
-                <p class="text-muted">Could not connect to the selected device. Scan again and pick your treadmill from the list.</p>
+                <p class="text-muted">Could not connect to your saved treadmill. Pick your device from the list below.</p>
             {% else %}
                 <h2 class="content-title">Connect your treadmill</h2>
                 <p class="text-muted">Scan for nearby Bluetooth devices, then choose yours and press Connect.</p>
@@ -22,9 +26,10 @@
 
         <div class="d-flex flex-wrap gap-2 justify-content-center mb-3">
             <button type="button" id="ble-scan-button" class="btn btn-outline-secondary">Scan nearby devices</button>
-            {% if connection_failed and pad_address %}
+            {% if pad_address or pad_name %}
                 <form method="post" action="{{ url_for('connect_device') }}" class="d-inline">
-                    <input type="hidden" name="address" value="{{ pad_address }}">
+                    {% if pad_address %}<input type="hidden" name="address" value="{{ pad_address }}">{% endif %}
+                    {% if pad_name %}<input type="hidden" name="name" value="{{ pad_name }}">{% endif %}
                     <button type="submit" class="btn btn-custom-primary">Retry last device</button>
                 </form>
             {% endif %}
@@ -42,12 +47,28 @@
 {% if not connecting %}
 <script>
 (function () {
+  const STORAGE_KEY = 'walkingpad_device_name';
   const statusEl = document.getElementById('ble-scan-status');
   const scanButton = document.getElementById('ble-scan-button');
   const listEl = document.getElementById('ble-device-list');
   const emptyEl = document.getElementById('ble-device-empty');
   const connectUrl = '{{ url_for("connect_device") }}';
   const lastAddress = {{ pad_address|tojson }};
+  const lastName = {{ pad_name|tojson }};
+  const clearSavedCache = {{ show_saved_connect_error|default(false)|tojson }};
+
+  function clearSavedTreadmillCache() {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch (e) {}
+  }
+
+  function rememberTreadmillName(name) {
+    if (!name) return;
+    try {
+      localStorage.setItem(STORAGE_KEY, name);
+    } catch (e) {}
+  }
 
   function displayName(device) {
     return device.name && String(device.name).trim() ? device.name : 'Unknown name';
@@ -57,6 +78,19 @@
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+
+  function bindConnectForms(root) {
+    root.querySelectorAll('form[action="{{ url_for("connect_device") }}"]').forEach(function (form) {
+      if (form.dataset.connectBound) return;
+      form.dataset.connectBound = '1';
+      form.addEventListener('submit', function () {
+        const nameInput = form.querySelector('input[name="name"]');
+        if (nameInput && nameInput.value) {
+          rememberTreadmillName(nameInput.value.trim());
+        }
+      });
+    });
   }
 
   function renderDevices(devices) {
@@ -73,7 +107,9 @@
       const name = displayName(device);
       const address = device.address || '';
       const rssiText = device.rssi != null ? device.rssi + ' dBm' : 'signal unknown';
-      const isLast = lastAddress && address === lastAddress;
+      const isLast =
+        (lastAddress && address === lastAddress) ||
+        (lastName && name === lastName);
 
       const item = document.createElement('div');
       item.className = 'list-group-item d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3';
@@ -84,10 +120,13 @@
         '</div>' +
         '<form method="post" action="' + connectUrl + '" class="flex-shrink-0">' +
           '<input type="hidden" name="address" value="' + escapeHtml(address) + '">' +
+          '<input type="hidden" name="name" value="' + escapeHtml(name) + '">' +
           '<button type="submit" class="btn btn-custom-primary btn-sm px-4">Connect</button>' +
         '</form>';
       listEl.appendChild(item);
     });
+
+    bindConnectForms(listEl);
   }
 
   async function runBleScan() {
@@ -119,6 +158,12 @@
     } finally {
       if (scanButton) scanButton.disabled = false;
     }
+  }
+
+  bindConnectForms(document);
+
+  if (clearSavedCache) {
+    clearSavedTreadmillCache();
   }
 
   if (scanButton) {
