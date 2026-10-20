@@ -1,178 +1,188 @@
 # WalkingPad Web Controller
 
-A simple, web-based application to control your KingSmith WalkingPad treadmill via Bluetooth Low Energy (BLE), offering features and a user experience that aims to improve upon the official app and remote.  
+A simple, web-based application to control compatible KingSmith WalkingPad and similar BLE treadmills (for example Dynamax models that use the same protocol), offering features and a user experience that aims to improve upon the official app and remote.
 
-This project was born out of a desire for a more flexible WalkingPad experience, specifically to address the limitations of the official controls, such as the inability to truly pause and resume a session (especially after stepping off) and the lack of cumulative session stat tracking across these pauses. With this application, you can easily hop off your WalkingPad, or pause it via the app/remote, and then seamlessly continue your session, tracking your total progress.
-
-This application was built for my own needs, but can be easily adapted for your own needs, for example, if you need metric instead of imperial measurements.  
+This project was born out of a desire for a more flexible walking-pad experience, specifically to address limitations of official controls such as the inability to truly pause and resume a session (especially after stepping off) and the lack of cumulative session stat tracking across these pauses.
 
 ## Key Features
 
-* **Web-Based Interface:** Control your WalkingPad from any device on your local network using a web browser.
-* **Bluetooth LE Connection:** Directly connects to and controls your WalkingPad.
+* **Web-Based Interface:** Control your treadmill from any device on your local network using a web browser.
+* **Bluetooth LE Connection:** Scan nearby devices, pick your treadmill from a list, and connect by address and advertised name.
+* **Remembered Treadmill:** After you connect once, the app saves the device name (browser cookie and `localStorage`) and tries to reconnect automatically on the next visit. If that fails, the saved name is cleared and the device list is shown again.
 * **Full Session Control:**
     * Start new walking sessions.
     * Pause sessions via the app.
     * Resume sessions at the last used speed.
 * **Intelligent Auto-Pause & Resume:**
-    * Automatically detects if you've stepped off the WalkingPad or if it's stopped by the remote, and transitions the app to a paused state.
+    * Automatically detects if you've stepped off the pad or if it's stopped by the remote, and transitions the app to a paused state.
     * Resumes from these auto-pauses at a stable speed from before the interruption.
 * **Dynamic Stat Tracking:** Displays and updates live session data:
-    * Current Speed (mph)
-    * Cumulative Distance (miles)
-    * Cumulative Steps
-    * Estimated Calories Burned
-    * Cumulative Active Time (H:M:S format)
+    * Current speed (mph and km/h)
+    * Cumulative distance (miles and km)
+    * Cumulative steps
+    * Estimated calories burned
+    * Cumulative active time (H:M:S format)
 * **Precise Speed Adjustments:**
-    * Increase/Decrease speed buttons.
-    * "Max Speed" preset button (defaults to ~3.7 MPH / 6.0 km/h, configurable).
-    * "Slow Walk" preset button (defaults to ~2.8 MPH / 4.5 km/h, configurable).
+    * Single-step increase/decrease buttons.
+    * Double-step increase/decrease buttons (two steps per press).
+    * "Max Speed" preset (defaults to ~3.7 mph / 6.0 km/h, configurable).
+    * "Slow Walk" preset (defaults to ~2.8 mph / 4.5 km/h, configurable).
 * **User-Friendly Conveniences:**
-    * Application automatically opens in your default web browser on startup (Windows).
-    * Includes a batch script for easy launching via a desktop/taskbar shortcut on Windows, including virtual environment activation.
-    * Clean, modern user interface.
-    * Connection status always visible in the header.
-    * "Close" button in the app to cleanly shut down the server.
-* **Cross-Platform Server:** Runs on Windows, macOS, or Linux systems that have Python and a Bluetooth adapter.
+    * Opens your default web browser on startup when using `run.py` or `dev.py`.
+    * `start_app.bat` (Windows) and `dev.sh` / `dev.bat` for easier launching.
+    * Clean, modern UI with connection status in the header.
+    * "Close" button in the app to shut down the server.
+* **Cross-Platform Server:** Runs on Windows, macOS, or Linux with Python and a Bluetooth adapter.
 
 ## Screenshots
 
-Below are some representative screenshots of the application in action:
+Below are representative screenshots of the application in action:
 
 ### Start Session Screen
-This is the initial screen you see after connecting to the WalkingPad, before a session has begun.
+Shown after connecting, before a session has begun.
+
 ![Start Session Screen](screenshots/start.png)
 
 ### Active Session Screen
-Displays live stats while you are actively walking. Includes controls for speed and pausing.
+Live stats and speed controls while walking.
+
 ![Active Session Screen](screenshots/active.png)
 
 ### Paused Session Screen
-Shown when a session is paused, either manually or automatically. Displays cumulative stats and allows you to resume.
+Cumulative stats and resume after a manual or automatic pause.
+
 ![Paused Session Screen](screenshots/paused.png)
 
 ## Supported Models
 
 This application is known to work with the **WalkingPad C1** model.
-It *should* also work with other WalkingPad models supported by the underlying `ph4-walkingpad` Python library, such as A1 and R1 PRO. Compatibility may vary depending on the specific model and firmware.
+
+It should also work with other treadmills supported by the **`ph4-walkingpad`** library (for example A1 and R1 PRO), and with **rebranded pads** that expose the same BLE services (for example some **Dynamax** units). Compatibility depends on the model and firmware—use the Bluetooth scan screen to confirm your device appears and connects.
 
 ## Credit & Core Dependency
 
-This application relies heavily on the excellent **`ph4-walkingpad`** Python library created by **ph4x** for Bluetooth communication and control of the WalkingPad. This project would not be possible without their work in reverse-engineering the protocol and providing the control interface.
+This application relies on the **`ph4-walkingpad`** Python library by **ph4x** for Bluetooth communication and protocol support.
 
 * **ph4-walkingpad on PyPI:** [https://pypi.org/project/ph4-walkingpad/](https://pypi.org/project/ph4-walkingpad/)
-* **ph4-walkingpad on GitHub:** (You might want to find and add the GitHub link if you know it)
 
 ## Prerequisites
 
-* Python 3.8 or newer.
+* Python 3.8 or newer (3.13 tested).
 * A Bluetooth adapter on the computer running this application.
-* A compatible WalkingPad treadmill.
-* The `pip` package installer for Python.
+* A compatible treadmill.
+* `pip` for installing dependencies.
 
 ## Setup and Installation
 
-1.  **Clone the Repository (or download files):**
-    ```bash
-    # If you have git installed:
-    # git clone <your-repository-url>
-    # cd <repository-name>
-    # Otherwise, download the files and navigate to the directory.
-    ```
+1. **Clone the repository** (or download and extract the project), then open a terminal in the project folder.
 
-2.  **Create a Python Virtual Environment:**
-    (Recommended to keep dependencies isolated)
-    Open a terminal or command prompt in the project directory:
+2. **Create a virtual environment:**
     ```bash
     python -m venv venv
     ```
 
-3.  **Activate the Virtual Environment:**
-    * On Windows:
-        ```cmd
-        venv\Scripts\activate
-        ```
-    * On macOS/Linux:
-        ```bash
-        source venv/bin/activate
-        ```
-    You should see `(venv)` at the beginning of your command prompt.
+3. **Activate the virtual environment:**
+    * Windows: `venv\Scripts\activate`
+    * macOS/Linux: `source venv/bin/activate`
 
-4.  **Install Dependencies:**
-    With the virtual environment activated, install the required Python packages:
+4. **Install dependencies:**
     ```bash
     pip install -r requirements.txt
     ```
-    The `requirements.txt` file should contain:
-    ```
-    flask
-    bleak
-    ph4-walkingpad
-    waitress
-    ```
+
+    `requirements.txt` includes: `flask`, `bleak`, `ph4-walkingpad`, and `waitress`.
 
 ## Running the Application
 
-This application uses the `waitress` WSGI server for a more stable experience than Flask's built-in development server.
+### Production-style server (recommended for normal use)
 
-1.  Ensure your WalkingPad is powered on and discoverable via Bluetooth.
-2.  Make sure your virtual environment is activated (see Step 3 above if it's not).
-3.  Run the application using the provided `run.py` script:
+Uses **Waitress** for a stable WSGI server:
+
+1. Power on your treadmill and ensure Bluetooth is enabled on your computer.
+2. Activate the virtual environment.
+3. Run:
     ```bash
     python run.py
     ```
-4.  The script will start the `waitress` server and automatically open the application in your default web browser at `http://127.0.0.1:5000`.
-5.  The console window running `run.py` will display logs from the application. You can stop the server by pressing `Ctrl+C` in this window, or by using the "Close" button in the web application's header.
+4. The browser opens at `http://127.0.0.1:5000`.
+5. Stop the server with **Ctrl+C** in the terminal, or use **Close** in the web UI.
 
-**For easy launching on Windows:**
-A `start_app.bat` script is provided to automate VENV activation and running `run.py`. You can create a desktop shortcut pointing to this `.bat` file and configure the shortcut to run minimized. (Refer to previous instructions on how to do this).
+**Windows:** `start_app.bat` activates the venv and runs `run.py`.
+
+### Development server (auto-reload)
+
+For local development, use Flask’s dev server with automatic reload when Python files change:
+
+```bash
+./dev.sh
+```
+
+On Windows: `dev.bat`, or `python dev.py` with the venv activated.
+
+Templates refresh on the next page load in debug mode. After a code reload, you may need to scan and connect to Bluetooth again.
 
 ## How to Use
 
-1.  **Connection:**
-    * When the app starts, it will attempt to scan for and connect to your WalkingPad.
-    * The header displays the connection status ("Connecting...", "Connected", "Disconnected").
-    * If disconnected, a "Connect" or "Try Again" button will be available.
+### 1. Connection
 
-2.  **Starting a Session:**
-    * Once connected, if no session is active, you'll see the "Start New Session" screen.
-    * Stat cards will show initial values (0 distance, 0 steps, 0:00:00 time, etc.).
-    * Click the "Start" button to begin your workout.
+* On first launch (or after a failed saved connection), the app **scans for nearby Bluetooth devices** (~5 seconds) and shows a list with name, address, and signal strength.
+* Tap **Connect** on your treadmill (for example `Dynamax` or `WalkingPad`).
+* The next time you open the app, it **attempts to reconnect using the saved device name**. If that fails, the saved name is removed and you’ll see the scan list again.
+* The header shows **Connecting**, **Connected**, or **Disconnected**.
 
-3.  **Active Session:**
-    * The "Active Session" screen will appear.
-    * Stat cards (Time, Speed, Distance, Steps, Calories) will update dynamically.
-    * Control buttons are available:
-        * **Slow:** Sets speed to a predefined slow walk (~2.8 MPH).
-        * **Decrease:** Lowers speed by a small step.
-        * **Pause:** Pauses the session and stops the belt.
-        * **Increase:** Raises speed by a small step.
-        * **Max:** Sets speed to the maximum configured (~3.7 MPH).
-    * If you step off the pad or stop it via the remote, the app will detect this and automatically switch to the "Paused Session" screen.
+### 2. Starting a Session
 
-4.  **Paused Session:**
-    * The "Paused Session" screen shows your current cumulative stats.
-    * A "Resume" button is available to continue your session at the speed you were at before pausing.
+* When connected and no session is active, use **Start New Session**.
+* Click **Start** to begin; stats start at zero.
 
-5.  **Ending the Application:**
-    * Click the "Close" button in the header of the web interface. This will shut down the Python server application.
+### 3. Active Session
+
+* Stats update live (time, speed, distance, steps, calories).
+* Controls:
+    * **Slow** — preset slow walk speed.
+    * **--** / **-** — decrease speed by two steps / one step.
+    * **Pause** — stop the belt and pause the session.
+    * **+** / **++** — increase speed by one step / two steps.
+    * **Max** — maximum configured speed.
+* Stepping off the pad or stopping via the remote triggers **auto-pause** and the paused screen.
+
+### 4. Paused Session
+
+* View cumulative stats and press **Resume** to continue at the previous speed.
+
+### 5. Ending the Application
+
+* Use **Close** in the header to shut down the server process.
 
 ## Customization
 
-Some speed settings can be configured directly in `app.py`.  All speeds are set in KPH:
-* `MAX_SPEED_KMH`: Default maximum speed for the "Max" button.
-* `MIN_SPEED_KMH`: Minimum speed the pad will be set to.
-* `SPEED_STEP`: How much the speed changes with "Increase"/"Decrease" buttons.
-* `SLOW_WALK_SPEED_KMH`: The target speed for the "Slow" button.
+Edit speed and scan behaviour in `app.py`:
+
+| Constant | Purpose |
+|----------|---------|
+| `MAX_SPEED_KMH` | Max speed for the **Max** button |
+| `MIN_SPEED_KMH` | Minimum belt speed |
+| `SPEED_STEP` | Single-step change for +/- buttons (km/h) |
+| `SLOW_WALK_SPEED_KMH` | **Slow** button target speed |
+| `SAVED_TREADMILL_COOKIE` | Cookie name for remembered treadmill (default `walkingpad_device_name`) |
+
+Double-step buttons use `SPEED_STEP * 2`.
 
 ## Troubleshooting
 
-* **Connection Issues:**
-    * Ensure your computer's Bluetooth is turned on.
-    * Make sure your WalkingPad is powered on and not connected to another device (like your phone's official app).
-    * Try moving the WalkingPad or your computer closer to improve signal strength.
-    * Check the console window (where you ran `python run.py`) for error messages or detailed logs.
-* **Icons Not Displaying:**
-    * This application uses Bootstrap Icons loaded from a CDN. Ensure the computer running the browser has an internet connection. The link is `https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css`. If specific icons like `bi-turtle` or `bi-rabbit` are missing, the CDN version might be older than the version where those icons were introduced. Consider updating the version in the link in `base.html`.
-* **App Behavior:**
-    * If the app behaves unexpectedly, review the console logs for errors from Python (Flask/Waitress server) or the browser's developer console for JavaScript errors.
+* **Connection / scan issues**
+    * Turn on the computer’s Bluetooth and power on the treadmill.
+    * Disconnect the treadmill from other apps (official phone app, etc.).
+    * Move closer to the device and run **Scan nearby devices** again.
+    * Pick the correct entry from the list—names vary by brand (WalkingPad, Dynamax, etc.).
+    * On macOS, BLE addresses are UUIDs; reconnecting by **saved name** is intentional.
+    * Check the terminal running `run.py` or `dev.py` for Python logs.
+
+* **`waitress-serve` not found**
+    * Activate the project venv and run `pip install -r requirements.txt`, or use `python run.py` only from that environment.
+
+* **Icons not displaying**
+    * Bootstrap Icons load from a CDN; the machine running the browser needs internet access. See `templates/base.html` for the CDN link.
+
+* **Unexpected behaviour**
+    * Review server logs and the browser developer console (F12) for errors.
